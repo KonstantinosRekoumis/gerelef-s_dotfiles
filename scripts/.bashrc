@@ -193,7 +193,7 @@ _install-optional-shell-requirements () {
         return 1
     fi
     # zoxide is used as a reference point for echoing out a helpful tip on startup, see below
-    pkcon install --allow-reinstall zoxide lsd plocate helix wl-clipboard
+    pkcon install --allow-reinstall zoxide lsd plocate
 }
 
 # use custom prompt
@@ -216,16 +216,11 @@ alias grep="\grep -i"
 alias rm="\rm -v"
 alias reverse="\tac"
 alias palindrome="\rev"
+# vpip is defined above as a function
 alias fuck='sudo $(history -p \!\!)'
 
-# there's a chance wget doesn't exist on the system, but whatever lmao
-if [[ -n "$(command -v wget)" ]]; then
-    alias wget="\wget -c --read-timeout=5 --tries=0 --cut-file-get-vars --content-disposition"
-fi
-
-if [[ -n "$(command -v npm)" ]]; then
-    alias npm="\npm --loglevel silly"
-fi
+[[ -n "$(command -v wget)" ]] && alias wget="\wget -c --read-timeout=5 --tries=0 --cut-file-get-vars --content-disposition"
+[[ -n "$(command -v npm)" ]] && alias npm="\npm --loglevel silly"
 
 # chromium depot_tools, add to PATH only if they actually exist
 #  https://chromium.googlesource.com/chromium/tools/depot_tools.git
@@ -233,23 +228,25 @@ fi
 if locate --version 2> /dev/null 1>&2 && locate --limit 1 'depot_tools' 2> /dev/null 1>&2; then
     # add shell functions (executables) to $PATH
     PATH=$PATH:"$(locate --limit 1 depot_tools)"
-    alias fetch="fetch --no-history"
+    alias fetch="\fetch --no-history"
 fi
 
-# use vim instead of nano, jesus christ
+if [[ -n "$(command -v vi)" ]]; then
+    export VISUAL="vi"
+    export EDITOR="vi"
+fi
+
 if [[ -n "$(command -v vim)" ]]; then
     export VISUAL="vim"
     export EDITOR="vim"
 fi
 
 if [[ -n "$(command -v nvim)" ]]; then
-    alias vim="nvim"
     export VISUAL="nvim"
     export EDITOR="nvim"
 fi
 
 if [[ -n "$(command -v hx)" ]]; then
-    alias helix="hx"
     export VISUAL="hx"
     export EDITOR="hx"
 fi
@@ -265,7 +262,6 @@ if [[ -n "$(command -v lsd)" ]]; then
     alias lss="lsd -A --group-dirs=first --blocks=permission,user,group,date,name --date '+%d/%m %H:%M:%S'"
 fi
 
-
 if locate --version 2> /dev/null 1>&2 && test -n "$(command -v fzf)"; then
     __fzflocate () {
         local WITH_LOCAL_DB=""
@@ -279,7 +275,7 @@ if locate --version 2> /dev/null 1>&2 && test -n "$(command -v fzf)"; then
     __updatedb_local () {
         updatedb --require-visibility 0 -o ~/.locate.db
     }
-    
+
     alias locate="__fzflocate"
     alias updatedb="__updatedb_local"
 fi

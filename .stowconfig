@@ -24,11 +24,6 @@ scripts/
     !!scripts/.gitconfig-gitdelta
 [end]
 
-.config/helix/
-[if-pkg:::hx]
-    !!.config/helix/
-[end]
-
 .config/fish/
 [if-pkg:::fish]
     !!.config/fish/
@@ -37,6 +32,11 @@ scripts/
 .config/ghostty
 [if-pkg:::ghostty]
     !!.config/ghostty
+[end]
+
+.config/zed
+[if-pkg:::zed]
+    !!.config/zed
 [end]
 
 .config/config
@@ -63,3 +63,8 @@ scripts/.gitconfig-gitdelta ::: .
 
 // create subdirectories on the fly, don't nest unecessarily
 .config/fish/fish_prompt.fish ::: .config/fish/functions/
+
+.config/zed/python.json ::: .config/zed/snippets/
+.config/zed/shellscript.json ::: .config/zed/snippets/
+.config/zed/fish.json ::: .config/zed/snippets/
+.config/zed/java.json ::: .config/zed/snippets/

@@ -4,6 +4,9 @@
 
 # USEFUL COMMAND: dnf whatprovides COMMAND or dnf provides COMMAND
 #  e.g. dnf whatprovides nvidia-smi or dnf provides nvidia-smi
+# USEFUL COMMAND: adding & disabling repositories
+# sudo dnf install -y --best --allowerasing --repofrompath "terra,https://repos.fyralabs.com/terra$(rpm -E %fedora)" --setopt="terra.gpgkey=https://repos.fyralabs.com/terra$(rpm -E %fedora)/key.asc" terra-release || exit
+# sudo dnf config-manager setopt terra.enabled=0
 
 export DEBUG_SETUP_ON="yes"
 export PATH="$PATH:$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
@@ -204,6 +207,7 @@ create-swapfile () (
 install-proprietary-nvidia-drivers () (
     # install nvidia drivers if we have an NVIDIA card
     if ! _is-nvidia-gpu; then return; fi
+    if ! _is-nvidia-nouveau; then return; fi
 
     readonly NVIDIA_GPU="$(_nvidia-gpu-model)"
 
@@ -224,24 +228,7 @@ install-proprietary-nvidia-drivers () (
     sudo dracut --force --regenerate-all || exit 1
     _echo-debug "Regenerated akmod build."
 
-    _echo-important "Script will hang while NVIDIA Drivers are being built."
-    _echo-important "Please note this can take upwards of five (5) minutes to finish."
-    _echo-important "HOWEVER, the script will only wait till a maximum of three (3) for stability purposes."
-    start_time=$(date +%s)
-    time_limit=$(( 3 * 60 ))
-    while ! modinfo -F version nvidia; do
-        _echo-status "Beep boop."
-
-        elapsed_time=$(( $(date +%s) - $start_time ))
-        if [ $elapsed_time -ge $time_limit ]; then
-            _echo-unexpected "Time limit reached. Won't wait any further."
-            _echo-unexpected "NVIDIA drivers will PROBABLY be built on next boot."
-            break
-        fi
-
-        sleep 10
-    done
-    _echo-success "NVIDIA drivers built."
+    _echo-unexpected "NVIDIA drivers will be built on next boot."
 
     if _is-uefi && [[ $(mokutil --sb-state 2> /dev/null) ]]; then
         # https://blog.monosoul.dev/2022/05/17/automatically-sign-nvidia-kernel-module-in-fedora-36/
@@ -282,7 +269,7 @@ install-media-codecs () (
     "obs-studio-plugin-webkitgtk" \
     "obs-studio-plugin-x264"
 
-    sudo dnf install -y --best --allowerasing --skip-unavailable "ffmpeg" "gstreamer-ffmpeg" "ffmpeg-libs" "libva" "libva-utils" "ffmpegthumbnailer" "libavcodec-freeworld"
+    sudo dnf install -y --best --allowerasing --skip-unavailable "ffmpeg" "gstreamer-ffmpeg" "ffmpeg-libs" "libva" "libva-utils" "ffmpegthumbnailer" "libavcodec-freeworld" "pipewire-codec-aptx"
     if _is-gnome-session; then
         # in order to have nautilus create thumbnails, we need both the ffmpeg thumbnailer & the appropriate codec
         #  afterwards, refresh the current cache
@@ -296,11 +283,11 @@ install-media-codecs () (
 install-gaming-packages () (
     _echo-status "-------------------INSTALLING GAMING PACKAGES----------------"
     sudo dnf install -y --best --allowerasing --skip-unavailable "steam" "gamescope"
-    flatpak install --system --noninteractive -y "dev.vencord.Vesktop" "com.leinardi.gst"
+    flatpak install --system --noninteractive -y "com.discordapp.Discord" "com.leinardi.gst"
     # vulkan drivers are required for proton-ge to work
     sudo dnf install -y --best --allowerasing --skip-unavailable "protontricks" "vulkan" "vulkan-loader" "vulkan-loader.i686"
     _echo-debug "installed proton-ge prerequisites"
-    update-compat-layers --steam --golden-egg
+    update-compat-layers
     _echo-debug "updated compatibility layers"
 
     # openrgb utils
@@ -622,6 +609,7 @@ com.spotify.Client \
 com.github.rafostar.Clapper \
 io.gitlab.theevilskeleton.Upscaler \
 com.github.tchx84.Flatseal \
+it.mijorus.gearlever \
 "
 
 readonly INSTALLABLE_BTRFS_TOOLS="\
@@ -640,6 +628,7 @@ xorg-x11-drv-nvidia-cuda \
 xorg-x11-drv-nvidia-power \
 nvidia-gpu-firmware \
 nvidia-modprobe \
+nvidia-smi \
 "
 
 readonly INSTALLABLE_VIRTUALIZATION_PACKAGES="\
@@ -728,12 +717,6 @@ fi
 if [[ -z $(dnf repolist | grep 'rpmfusion-nonfree') ]]; then
     sudo dnf install -y --best --allowerasing "https://download1.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-$(rpm -E %fedora).noarch.rpm" || exit
 fi
-# FIXME this is probably borked
-# terrapkg https://github.com/terrapkg/packages/tree/frawhide
-if [[ -z $(dnf repolist | grep 'terra') ]]; then
-    sudo dnf install -y --best --allowerasing --repofrompath "terra,https://repos.fyralabs.com/terra$(rpm -E %fedora)" --setopt="terra.gpgkey=https://repos.fyralabs.com/terra$(rpm -E %fedora)/key.asc" terra-release || exit
-    sudo dnf config-manager setopt terra.enabled=0
-fi
 
 # no requirement to add flathub ourselves anymore in f38; it should be enabled by default. however, it may not be, most likely by accident, so this is a failsafe
 sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2> /dev/null || exit
@@ -800,7 +783,7 @@ _echo-important " due to its intrusive nature."
 
 ask user question 'Do you want to install snapd?' && INSTALL_SNAPD="yes"
 _echo-debug "Will install snapd? $INSTALL_SNAPD"
-ask user question'Do you want to install gaming packages?' && INSTALL_GAMING="yes"
+ask user question 'Do you want to install gaming packages?' && INSTALL_GAMING="yes"
 _echo-debug "Will install gaming? $INSTALL_GAMING"
 ask user question 'Do you want to install terminal tools?' && INSTALL_TERM_TOOLS="yes"
 _echo-debug "Will install terminal-tools? $INSTALL_TERM_TOOLS"
@@ -949,7 +932,7 @@ fi
 
 [[ -n "$INSTALL_JETBRAINS" ]] && install-jetbrains-toolbox
 [[ -n "$INSTALL_VSC" ]] && install-visual-studio-code
-[[ -n "$INSTALL_ZED" ]] && sudo dnf install -y --best --allowerasing --enablerepo=terra "zed"
+[[ -n "$INSTALL_ZED" ]] && curl -f https://zed.dev/install.sh | sh
 [[ -n "$INSTALL_SUBLIME" ]] && install-sublime-text-editor
 [[ -n "$INSTALL_ZED" ]] && sudo dnf remove -y "gnome-text-editor" "gedit"
 [[ -n "$INSTALL_VSC" ]] && sudo dnf remove -y "gnome-text-editor" "gedit"
@@ -997,6 +980,8 @@ if _is-gnome-session; then
     _echo-important "- Tailscale Status (https://github.com/maxgallup/tailscale-status)"
 
     _echo-status "Configuring all gsettings for $REAL_USER..."
+    foreach $(partial gsettings set org.gnome.desktop.wm.keybindings {1} "[]" ) < <(gsettings list-recursively org.gnome.desktop.wm.keybindings | awk '{ print $2 }')
+
     # theme settings
     gsettings set org.gnome.desktop.interface cursor-theme 'Adwaita'
     gsettings set org.gnome.desktop.interface icon-theme 'Adwaita'
@@ -1113,100 +1098,26 @@ if _is-gnome-session; then
     gsettings set org.gnome.settings-daemon.plugins.color night-light-schedule-to 6.0
 
     # keybinds/shortcuts
+    gsettings set org.gnome.desktop.wm.keybindings minimize "['<Super>q']"
+    gsettings set org.gnome.desktop.wm.keybindings toggle-maximized "['<Super>x']"
+    gsettings set org.gnome.desktop.wm.keybindings cycle-group "['<Alt>grave']"
+    gsettings set org.gnome.desktop.wm.keybindings cycle-group-backward "['<Shift><Alt>grave']"
+    gsettings set org.gnome.desktop.wm.keybindings panel-run-dialog "['<Alt>F2']"
+    gsettings set org.gnome.desktop.wm.keybindings switch-applications "['<Alt>Tab']"
+    gsettings set org.gnome.desktop.wm.keybindings switch-applications-backward "['<Shift><Alt>Tab']"
+    gsettings set org.gnome.desktop.wm.keybindings switch-input-source "['<Super>space']"
+    gsettings set org.gnome.desktop.wm.keybindings switch-input-source-backward "['<Shift><Super>space']"
+    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-left "['<Control><Super>Left']"
+    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-right "['<Control><Super>Right']"
+    gsettings set org.gnome.desktop.wm.preferences mouse-button-modifier '<Super>'
+    gsettings set org.gnome.desktop.wm.preferences workspace-names "[]"
+
     gsettings set org.gnome.settings-daemon.plugins.media-keys volume-down "[]"
     gsettings set org.gnome.settings-daemon.plugins.media-keys volume-up "[]"
     gsettings set org.gnome.settings-daemon.plugins.media-keys mic-mute "[]"
     gsettings set org.gnome.shell.keybindings screenshot "[]"
     gsettings set org.gnome.shell.keybindings screenshot-window "[]"
     gsettings set org.gnome.shell.keybindings show-screenshot-ui "[]"
-    gsettings set org.gnome.desktop.wm.keybindings activate-window-menu "['Menu']"
-    gsettings set org.gnome.desktop.wm.keybindings always-on-top  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings begin-move  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings begin-resize  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings close "['<Super>q']"
-    gsettings set org.gnome.desktop.wm.keybindings cycle-group "['<Alt>grave']"
-    gsettings set org.gnome.desktop.wm.keybindings cycle-group-backward "['<Shift><Alt>grave']"
-    gsettings set org.gnome.desktop.wm.keybindings cycle-panels  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings cycle-panels-backward  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings cycle-windows  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings cycle-windows-backward  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings lower  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings maximize  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings maximize-horizontally  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings maximize-vertically  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings minimize "['<Super>z']"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-center  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-corner-ne  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-corner-nw  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-corner-se  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-corner-sw  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-monitor-down  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-monitor-left  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-monitor-right  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-monitor-up  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-side-e  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-side-n  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-side-s  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-side-w  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-1 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-10  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-11  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-12  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-2  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-3  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-4  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-5  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-6  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-7  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-8  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-9  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-down  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-last  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-left "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-right "[]"
-    gsettings set org.gnome.desktop.wm.keybindings move-to-workspace-up  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings panel-main-menu  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings panel-run-dialog "['<Alt>F2']"
-    gsettings set org.gnome.desktop.wm.keybindings raise  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings raise-or-lower  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings set-spew-mark  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings show-desktop  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-applications "['<Alt>Tab']"
-    gsettings set org.gnome.desktop.wm.keybindings switch-applications-backward "['<Shift><Alt>Tab']"
-    gsettings set org.gnome.desktop.wm.keybindings switch-windows "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-windows-backward "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-group "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-group-backward  "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-input-source "['<Super>space']"
-    gsettings set org.gnome.desktop.wm.keybindings switch-input-source-backward "['<Shift><Super>space']"
-    gsettings set org.gnome.desktop.wm.keybindings switch-panels "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-panels-backward "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-1 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-10 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-11 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-12 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-2 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-3 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-4 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-5 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-6 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-7 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-8 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-9 "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-down "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-last "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-left "['<Control><Super>Left']"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-right "['<Control><Super>Right']"
-    gsettings set org.gnome.desktop.wm.keybindings switch-to-workspace-up "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-windows "[]"
-    gsettings set org.gnome.desktop.wm.keybindings switch-windows-backward "[]"
-    gsettings set org.gnome.desktop.wm.keybindings toggle-above "[]"
-    gsettings set org.gnome.desktop.wm.keybindings toggle-fullscreen "[]"
-    gsettings set org.gnome.desktop.wm.keybindings toggle-maximized "['<Super>x']"
-    gsettings set org.gnome.desktop.wm.keybindings toggle-on-all-workspaces "[]"
-    gsettings set org.gnome.desktop.wm.keybindings unmaximize "[]"
-    gsettings set org.gnome.desktop.wm.preferences mouse-button-modifier '<Super>'
-    gsettings set org.gnome.desktop.wm.preferences workspace-names  "[]"
 fi
 
 # write everything to disk to prevent unpredictable behaviour
